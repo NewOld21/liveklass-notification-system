@@ -28,6 +28,9 @@ public class User extends BaseTimeEntity {
     @Column(nullable = false, length = 100)
     private String name;
 
+    @Column(name = "password_hash", nullable = false, length = 255)
+    private String passwordHash;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private UserStatus status;
@@ -35,14 +38,15 @@ public class User extends BaseTimeEntity {
     protected User() {
     }
 
-    private User(String email, String name, UserStatus status) {
+    private User(String email, String name, String passwordHash, UserStatus status) {
         this.email = email;
         this.name = name;
+        this.passwordHash = passwordHash;
         this.status = status;
     }
 
-    public static User create(String email, String name, UserStatus status) {
-        return new User(email, name, status);
+    public static User create(String email, String name, String passwordHash) {
+        return new User(email, name, passwordHash, UserStatus.ACTIVE);
     }
 
     public Long getId() {
@@ -55,6 +59,10 @@ public class User extends BaseTimeEntity {
 
     public String getName() {
         return name;
+    }
+
+    public String getPasswordHash() {
+        return passwordHash;
     }
 
     public UserStatus getStatus() {

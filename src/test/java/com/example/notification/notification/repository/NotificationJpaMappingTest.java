@@ -18,7 +18,6 @@ import com.example.notification.notification.entity.NotificationType;
 import com.example.notification.template.entity.NotificationTemplate;
 import com.example.notification.template.repository.NotificationTemplateRepository;
 import com.example.notification.user.entity.User;
-import com.example.notification.user.entity.UserStatus;
 import com.example.notification.user.repository.UserRepository;
 
 @SpringBootTest
@@ -39,7 +38,7 @@ class NotificationJpaMappingTest {
 
     @Test
     void persistEntitiesFollowingReadmeSchema() {
-        User user = userRepository.save(User.create("user@test.com", "tester", UserStatus.ACTIVE));
+        User user = userRepository.save(User.create("user@test.com", "tester", "password-hash"));
         NotificationTemplate template = templateRepository.save(
                 NotificationTemplate.create(
                         NotificationType.PAYMENT_CONFIRMED,
