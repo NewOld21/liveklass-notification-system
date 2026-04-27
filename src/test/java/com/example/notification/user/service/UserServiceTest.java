@@ -17,6 +17,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 
 import com.example.notification.common.exception.BusinessException;
 import com.example.notification.common.exception.ErrorCode;
+import com.example.notification.common.jwt.JwtTokenProvider;
 import com.example.notification.user.dto.UserLoginRequest;
 import com.example.notification.user.dto.UserLoginResponse;
 import com.example.notification.user.dto.UserResponse;
@@ -40,7 +41,7 @@ class UserServiceTest {
     }
 
     @Test
-    @DisplayName("?뚯썝媛?낆뿉 ?깃났?섎㈃ 鍮꾨?踰덊샇瑜??댁떆濡???ν븯怨??ъ슜???묐떟??諛섑솚?쒕떎")
+    @DisplayName("회원가입에 성공하면 비밀번호를 해시로 저장하고 사용자 응답을 반환한다")
     void signupCreatesUserWithHashedPassword() {
         UserSignupRequest request = new UserSignupRequest("user@test.com", "tester", "password123");
         when(userRepository.existsByEmail("user@test.com")).thenReturn(false);
@@ -54,7 +55,7 @@ class UserServiceTest {
     }
 
     @Test
-    @DisplayName("?대? 媛?낅맂 ?대찓?쇱씠硫??뚯썝媛?낆뿉 ?ㅽ뙣?쒕떎")
+    @DisplayName("이미 가입된 이메일이면 회원가입에 실패한다")
     void signupFailsWhenEmailAlreadyExists() {
         UserSignupRequest request = new UserSignupRequest("user@test.com", "tester", "password123");
         when(userRepository.existsByEmail("user@test.com")).thenReturn(true);
@@ -68,7 +69,7 @@ class UserServiceTest {
     }
 
     @Test
-    @DisplayName("濡쒓렇?몄뿉 ?깃났?섎㈃ JWT ?좏겙??諛섑솚?쒕떎")
+    @DisplayName("로그인에 성공하면 JWT 토큰을 반환한다")
     void loginReturnsJwtToken() {
         User user = User.create("user@test.com", "tester", passwordEncoder.encode("password123"));
         when(userRepository.findByEmail("user@test.com")).thenReturn(Optional.of(user));
@@ -82,7 +83,7 @@ class UserServiceTest {
     }
 
     @Test
-    @DisplayName("議댁옱?섏? ?딅뒗 ?대찓?쇱씠硫?濡쒓렇?몄뿉 ?ㅽ뙣?쒕떎")
+    @DisplayName("존재하지 않는 이메일이면 로그인에 실패한다")
     void loginFailsWhenUserDoesNotExist() {
         when(userRepository.findByEmail("missing@test.com")).thenReturn(Optional.empty());
 
@@ -93,7 +94,7 @@ class UserServiceTest {
     }
 
     @Test
-    @DisplayName("鍮꾨?踰덊샇媛 ?由щ㈃ 濡쒓렇?몄뿉 ?ㅽ뙣?쒕떎")
+    @DisplayName("비밀번호가 틀리면 로그인에 실패한다")
     void loginFailsWhenPasswordDoesNotMatch() {
         User user = User.create("user@test.com", "tester", passwordEncoder.encode("password123"));
         when(userRepository.findByEmail("user@test.com")).thenReturn(Optional.of(user));
