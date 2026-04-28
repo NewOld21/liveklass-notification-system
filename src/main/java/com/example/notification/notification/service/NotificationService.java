@@ -3,6 +3,7 @@ package com.example.notification.notification.service;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import org.slf4j.Logger;
@@ -19,6 +20,8 @@ import com.example.notification.idempotency.repository.IdempotencyStore;
 import com.example.notification.idempotency.service.IdempotencyKeyGenerator;
 import com.example.notification.notification.dto.NotificationCreateRequest;
 import com.example.notification.notification.dto.NotificationCreateResponse;
+import com.example.notification.notification.dto.NotificationListItemResponse;
+import com.example.notification.notification.dto.NotificationReadFilter;
 import com.example.notification.notification.dto.NotificationStatusResponse;
 import com.example.notification.notification.entity.Notification;
 import com.example.notification.notification.repository.NotificationRepository;
@@ -153,6 +156,22 @@ public class NotificationService {
         notification.markAsRead(LocalDateTime.now(clock));
     }
 
+    @Transactional(readOnly = true)
+    public List<NotificationListItemResponse> getUserNotifications(
+            Long recipientId,
+            Long authenticatedUserId,
+            NotificationReadFilter filter
+    ) {
+        if (!recipientId.equals(authenticatedUserId)) {
+            throw new BusinessException(ErrorCode.ACCESS_DENIED, "Authenticated user cannot access notifications.");
+        }
+
+        NotificationReadFilter resolvedFilter = filter == null ? NotificationReadFilter.ALL : filter;
+        return findByReadFilter(recipientId, resolvedFilter).stream()
+                .map(NotificationListItemResponse::from)
+                .toList();
+    }
+
     private Optional<NotificationCreateResponse> resolveExistingIdempotencyRecord(
             String dedupKey,
             IdempotencyRecord record
@@ -182,6 +201,14 @@ public class NotificationService {
         if (!recipientId.equals(authenticatedUserId)) {
             throw new BusinessException(ErrorCode.ACCESS_DENIED, "Authenticated user cannot access notification.");
         }
+    }
+
+    private List<Notification> findByReadFilter(Long recipientId, NotificationReadFilter filter) {
+        return switch (filter) {
+            case ALL -> notificationRepository.findByRecipientIdOrderByCreatedAtDesc(recipientId);
+            case READ -> notificationRepository.findReadByRecipientId(recipientId);
+            case UNREAD -> notificationRepository.findUnreadByRecipientId(recipientId);
+        };
     }
 
     private String extractEventId(NotificationCreateRequest request) {

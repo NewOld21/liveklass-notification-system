@@ -179,4 +179,5 @@ public class NotificationController {
 
         return ResponseEntity.noContent().build();
     }
+
 }

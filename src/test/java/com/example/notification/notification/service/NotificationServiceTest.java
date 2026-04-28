@@ -11,6 +11,7 @@ import java.time.Duration;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -28,6 +29,8 @@ import com.example.notification.idempotency.repository.IdempotencyStore;
 import com.example.notification.idempotency.service.SimpleIdempotencyKeyGenerator;
 import com.example.notification.notification.dto.NotificationCreateRequest;
 import com.example.notification.notification.dto.NotificationCreateResponse;
+import com.example.notification.notification.dto.NotificationListItemResponse;
+import com.example.notification.notification.dto.NotificationReadFilter;
 import com.example.notification.notification.dto.NotificationStatusResponse;
 import com.example.notification.notification.entity.Notification;
 import com.example.notification.notification.entity.NotificationChannel;
@@ -420,6 +423,86 @@ class NotificationServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.ACCESS_DENIED);
+    }
+
+    @Test
+    @DisplayName("전체 필터는 수신자의 모든 알림 목록을 반환한다")
+    void getUserNotificationsReturnsAllNotifications() {
+        User user = createUserWithId(101L);
+        Notification notification = createNotificationWithId(1L, user);
+        when(notificationRepository.findByRecipientIdOrderByCreatedAtDesc(101L))
+                .thenReturn(List.of(notification));
+
+        List<NotificationListItemResponse> response = notificationService.getUserNotifications(
+                101L,
+                101L,
+                NotificationReadFilter.ALL
+        );
+
+        assertThat(response).hasSize(1);
+        assertThat(response.get(0).notificationId()).isEqualTo(1L);
+        verify(notificationRepository).findByRecipientIdOrderByCreatedAtDesc(101L);
+    }
+
+    @Test
+    @DisplayName("읽음 필터는 readAt이 있는 알림 목록을 조회한다")
+    void getUserNotificationsReturnsReadNotifications() {
+        User user = createUserWithId(101L);
+        Notification notification = createNotificationWithId(1L, user);
+        ReflectionTestUtils.setField(notification, "readAt", java.time.LocalDateTime.of(2026, 4, 24, 10, 5));
+        when(notificationRepository.findReadByRecipientId(101L)).thenReturn(List.of(notification));
+
+        List<NotificationListItemResponse> response = notificationService.getUserNotifications(
+                101L,
+                101L,
+                NotificationReadFilter.READ
+        );
+
+        assertThat(response).hasSize(1);
+        assertThat(response.get(0).readAt()).isEqualTo("2026-04-24T10:05:00");
+        verify(notificationRepository).findReadByRecipientId(101L);
+    }
+
+    @Test
+    @DisplayName("안읽음 필터는 readAt이 없는 알림 목록을 조회한다")
+    void getUserNotificationsReturnsUnreadNotifications() {
+        User user = createUserWithId(101L);
+        Notification notification = createNotificationWithId(1L, user);
+        when(notificationRepository.findUnreadByRecipientId(101L)).thenReturn(List.of(notification));
+
+        List<NotificationListItemResponse> response = notificationService.getUserNotifications(
+                101L,
+                101L,
+                NotificationReadFilter.UNREAD
+        );
+
+        assertThat(response).hasSize(1);
+        assertThat(response.get(0).readAt()).isNull();
+        verify(notificationRepository).findUnreadByRecipientId(101L);
+    }
+
+    @Test
+    @DisplayName("필터가 없으면 전체 알림 목록을 반환한다")
+    void getUserNotificationsUsesAllFilterWhenFilterIsNull() {
+        when(notificationRepository.findByRecipientIdOrderByCreatedAtDesc(101L)).thenReturn(List.of());
+
+        List<NotificationListItemResponse> response = notificationService.getUserNotifications(101L, 101L, null);
+
+        assertThat(response).isEmpty();
+        verify(notificationRepository).findByRecipientIdOrderByCreatedAtDesc(101L);
+    }
+
+    @Test
+    @DisplayName("다른 사용자의 알림 목록 조회는 차단한다")
+    void getUserNotificationsFailsWhenAuthenticatedUserIsNotRecipient() {
+        assertThatThrownBy(() -> notificationService.getUserNotifications(101L, 202L, NotificationReadFilter.ALL))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.ACCESS_DENIED);
+
+        verify(notificationRepository, never()).findByRecipientIdOrderByCreatedAtDesc(101L);
+        verify(notificationRepository, never()).findReadByRecipientId(101L);
+        verify(notificationRepository, never()).findUnreadByRecipientId(101L);
     }
 
     private User createUserWithId(Long userId) {
