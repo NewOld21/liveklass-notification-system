@@ -3,6 +3,9 @@ package com.example.notification.notification.entity;
 import java.time.LocalDateTime;
 
 import com.example.notification.common.entity.BaseTimeEntity;
+import com.example.notification.common.exception.BusinessException;
+import com.example.notification.common.exception.ErrorCode;
+import com.example.notification.notification.service.NotificationProcessingPolicy;
 import com.example.notification.user.entity.User;
 
 import jakarta.persistence.Column;
@@ -125,6 +128,65 @@ public class Notification extends BaseTimeEntity {
                 maxRetryCount,
                 requestedAt
         );
+    }
+
+    public void markAsRead(LocalDateTime readAt) {
+        if (this.readAt == null) {
+            this.readAt = readAt;
+        }
+    }
+
+    public boolean isProcessableAt(LocalDateTime now) {
+        if (status == NotificationStatus.PENDING) {
+            return true;
+        }
+        return status == NotificationStatus.RETRY_WAITING
+                && nextRetryAt != null
+                && !nextRetryAt.isAfter(now);
+    }
+
+    public void startProcessing(LocalDateTime now) {
+        if (!isProcessableAt(now)) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST, "Notification cannot start processing.");
+        }
+
+        this.status = NotificationStatus.PROCESSING;
+        this.processedAt = null;
+    }
+
+    public void markSent(LocalDateTime processedAt) {
+        validateProcessingState();
+
+        this.status = NotificationStatus.SENT;
+        this.nextRetryAt = null;
+        this.lastErrorCode = null;
+        this.lastErrorMessage = null;
+        this.processedAt = processedAt;
+    }
+
+    public void markDispatchFailed(String errorCode, String errorMessage, LocalDateTime failedAt) {
+        validateProcessingState();
+
+        int nextRetryCount = retryCount + 1;
+        this.retryCount = nextRetryCount;
+        this.lastErrorCode = errorCode;
+        this.lastErrorMessage = errorMessage;
+        this.processedAt = failedAt;
+
+        if (nextRetryCount <= maxRetryCount) {
+            this.status = NotificationStatus.RETRY_WAITING;
+            this.nextRetryAt = failedAt.plus(NotificationProcessingPolicy.retryBackoff(nextRetryCount));
+            return;
+        }
+
+        this.status = NotificationStatus.FAILED;
+        this.nextRetryAt = null;
+    }
+
+    private void validateProcessingState() {
+        if (status != NotificationStatus.PROCESSING) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST, "Notification is not processing.");
+        }
     }
 
     public Long getId() {

@@ -77,4 +77,32 @@ public class NotificationDispatchHistory extends BaseTimeEntity {
     ) {
         return new NotificationDispatchHistory(notification, attempt, status, errorCode, errorMessage, dispatchedAt);
     }
+
+    public Long getId() {
+        return id;
+    }
+
+    public Notification getNotification() {
+        return notification;
+    }
+
+    public int getAttempt() {
+        return attempt;
+    }
+
+    public DispatchStatus getStatus() {
+        return status;
+    }
+
+    public String getErrorCode() {
+        return errorCode;
+    }
+
+    public String getErrorMessage() {
+        return errorMessage;
+    }
+
+    public LocalDateTime getDispatchedAt() {
+        return dispatchedAt;
+    }
 }

@@ -39,8 +39,9 @@ public class RedisIdempotencyStore implements IdempotencyStore {
     }
 
     @Override
-    public void saveProcessing(String key, Duration ttl) {
-        stringRedisTemplate.opsForValue().set(key, PROCESSING_VALUE, ttl);
+    public boolean saveProcessingIfAbsent(String key, Duration ttl) {
+        Boolean saved = stringRedisTemplate.opsForValue().setIfAbsent(key, PROCESSING_VALUE, ttl);
+        return Boolean.TRUE.equals(saved);
     }
 
     @Override

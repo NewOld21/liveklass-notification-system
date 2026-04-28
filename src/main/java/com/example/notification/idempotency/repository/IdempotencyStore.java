@@ -9,7 +9,7 @@ public interface IdempotencyStore {
 
     Optional<IdempotencyRecord> find(String key);
 
-    void saveProcessing(String key, Duration ttl);
+    boolean saveProcessingIfAbsent(String key, Duration ttl);
 
     void saveCompleted(String key, Long notificationId, Duration ttl);
 
