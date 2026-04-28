@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -43,6 +44,14 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity.status(ErrorCode.INVALID_REQUEST.getStatus())
                 .body(ErrorResponse.of(ErrorCode.INVALID_REQUEST.getCode(), message, field, now()));
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleHttpMessageNotReadableException(HttpMessageNotReadableException ex) {
+        log.warn("Request body parsing failed. message={}", ex.getMessage());
+
+        return ResponseEntity.status(ErrorCode.INVALID_REQUEST.getStatus())
+                .body(ErrorResponse.of(ErrorCode.INVALID_REQUEST.getCode(), "Request body is invalid.", now()));
     }
 
     @ExceptionHandler(Exception.class)

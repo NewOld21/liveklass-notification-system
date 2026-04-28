@@ -69,4 +69,28 @@ public class NotificationTemplate extends BaseTimeEntity {
     ) {
         return new NotificationTemplate(type, channel, titleTemplate, bodyTemplate, active);
     }
+
+    public Long getId() {
+        return id;
+    }
+
+    public NotificationType getType() {
+        return type;
+    }
+
+    public NotificationChannel getChannel() {
+        return channel;
+    }
+
+    public String getTitleTemplate() {
+        return titleTemplate;
+    }
+
+    public String getBodyTemplate() {
+        return bodyTemplate;
+    }
+
+    public boolean isActive() {
+        return active;
+    }
 }

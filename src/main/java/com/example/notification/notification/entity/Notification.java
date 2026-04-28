@@ -127,6 +127,12 @@ public class Notification extends BaseTimeEntity {
         );
     }
 
+    public void markAsRead(LocalDateTime readAt) {
+        if (this.readAt == null) {
+            this.readAt = readAt;
+        }
+    }
+
     public Long getId() {
         return id;
     }
