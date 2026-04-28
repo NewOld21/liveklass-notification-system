@@ -15,4 +15,11 @@ public final class NotificationProcessingPolicy {
 
     private NotificationProcessingPolicy() {
     }
+
+    public static Duration retryBackoff(int retryCount) {
+        if (retryCount <= 0 || retryCount > RETRY_BACKOFFS.size()) {
+            throw new IllegalArgumentException("retryCount must be between 1 and " + RETRY_BACKOFFS.size());
+        }
+        return RETRY_BACKOFFS.get(retryCount - 1);
+    }
 }
