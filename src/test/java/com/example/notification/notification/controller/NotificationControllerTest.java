@@ -1,8 +1,6 @@
 package com.example.notification.notification.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -14,8 +12,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
-import com.example.notification.common.exception.BusinessException;
-import com.example.notification.common.exception.ErrorCode;
 import com.example.notification.common.jwt.JwtAuthorizationExtractor;
 import com.example.notification.common.jwt.JwtClaims;
 import com.example.notification.notification.dto.NotificationCreateRequest;
@@ -53,21 +49,27 @@ class NotificationControllerTest {
     }
 
     @Test
-    @DisplayName("JWT 사용자와 수신자가 다르면 알림 생성에 실패한다")
-    void createFailsWhenAuthenticatedUserDoesNotMatchRecipient() {
+    @DisplayName("JWT 사용자와 수신자가 달라도 알림 생성 요청을 등록한다")
+    void createAllowsRecipientDifferentFromAuthenticatedUser() {
         NotificationService notificationService = org.mockito.Mockito.mock(NotificationService.class);
         JwtAuthorizationExtractor jwtAuthorizationExtractor = org.mockito.Mockito.mock(JwtAuthorizationExtractor.class);
         NotificationController controller = new NotificationController(notificationService, jwtAuthorizationExtractor);
         NotificationCreateRequest request = createRequest(101L);
+        NotificationCreateResponse serviceResponse = new NotificationCreateResponse(
+                1L,
+                NotificationStatus.PENDING,
+                LocalDateTime.of(2026, 4, 24, 10, 0)
+        );
         when(jwtAuthorizationExtractor.extract("Bearer valid-token"))
                 .thenReturn(new JwtClaims(202L, "other@test.com", "other", 1L, 2L));
+        when(notificationService.create(request)).thenReturn(serviceResponse);
 
-        assertThatThrownBy(() -> controller.create("Bearer valid-token", request))
-                .isInstanceOf(BusinessException.class)
-                .extracting("errorCode")
-                .isEqualTo(ErrorCode.ACCESS_DENIED);
+        ResponseEntity<NotificationCreateResponse> response = controller.create("Bearer valid-token", request);
 
-        verify(notificationService, never()).create(request);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+        assertThat(response.getBody()).isEqualTo(serviceResponse);
+        verify(jwtAuthorizationExtractor).extract("Bearer valid-token");
+        verify(notificationService).create(request);
     }
 
     @Test

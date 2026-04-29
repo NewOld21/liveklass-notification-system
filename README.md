@@ -79,6 +79,12 @@ gradlew.bat bootRun
 - `SPRING_DATA_REDIS_PORT`
 - `SPRING_DATA_REDIS_PASSWORD`
 
+### Swagger UI
+
+  애플리케이션 실행 후 아래 주소에서 API 문서를 확인할 수 있습니다.
+
+  - http://localhost:8080/swagger-ui/index.html
+
 ## 요구사항 해석 및 가정
 
 - 이 시스템은 "즉시 발송 API"가 아니라 "발송 요청을 안정적으로 접수하고 후속 비동기 처리하는 시스템"으로 해석했다.
@@ -277,7 +283,7 @@ Redis는 요청 수준의 빠른 중복 차단을 담당하고, DB unique(`dedup
 
 ### 3. 사용자 알림 목록 조회
 
-`GET /api/users/{recipientId}/notifications?read=false`
+`GET /api/users/me/notifications?filter=UNREAD`
 
 ### 4. 읽음 처리
 
@@ -477,8 +483,10 @@ gradlew.bat test
 
 ## AI 활용 범위
 
-- 요구사항 해석 초안 정리
-- README 구조화 및 문장 다듬기
-- 설계 설명 초안 보조
+- 요구사항을 기능 단위로 분해하고 구현 체크리스트를 정리하는 데 활용했다.
+- 서비스, 컨트롤러, 리포지토리, 테스트 코드의 구현 초안 작성과 수정 방향 검토에 활용했다.
+- 중복 발송 방지, 재시도 정책, stale 처리, 수동 재시도 정책의 설명 문장 초안을 작성하는 데 활용했다.
+- README 구조 정리에 활용했다.
+- 테스트 실패 원인 파악과 테스트 케이스 보강 방향을 검토하는 데 보조적으로 활용했다.
 
-최종 설계 판단과 문서 내용은 직접 검토하고 수정했다.
+최종 요구사항 해석, 설계 판단, 코드 반영 여부, 테스트 결과, 문서 내용은 직접 검토하고 수정했다.

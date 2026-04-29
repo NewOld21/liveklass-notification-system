@@ -12,7 +12,7 @@ import jakarta.validation.constraints.Positive;
 
 @Schema(description = "Notification creation request")
 public record NotificationCreateRequest(
-        @Schema(description = "Notification recipient user ID. It must match the authenticated JWT user ID.", example = "101")
+        @Schema(description = "Notification recipient user ID.", example = "101")
         @NotNull(message = "recipientId is required")
         @Positive(message = "recipientId must be positive")
         Long recipientId,

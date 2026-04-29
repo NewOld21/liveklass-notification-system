@@ -48,7 +48,6 @@ class UserNotificationControllerTest {
 
         ResponseEntity<List<NotificationListItemResponse>> response = controller.getUserNotifications(
                 "Bearer valid-token",
-                101L,
                 NotificationReadFilter.UNREAD
         );
 
