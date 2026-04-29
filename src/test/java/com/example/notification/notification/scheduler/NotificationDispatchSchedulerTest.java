@@ -30,6 +30,10 @@ class NotificationDispatchSchedulerTest {
                 50
         );
         PageRequest limit = PageRequest.of(0, 50);
+        when(notificationRepository.findStaleProcessingTargetIds(
+                java.time.LocalDateTime.of(2026, 4, 24, 9, 50),
+                limit
+        )).thenReturn(List.of(9L));
         when(notificationRepository.findPendingDispatchTargetIds(limit)).thenReturn(List.of(1L, 2L));
         when(notificationRepository.findRetryWaitingDispatchTargetIds(
                 java.time.LocalDateTime.of(2026, 4, 24, 10, 0),
@@ -38,6 +42,7 @@ class NotificationDispatchSchedulerTest {
 
         scheduler.dispatchPendingAndRetryWaitingNotifications();
 
+        verify(dispatchService).recoverStaleProcessing(9L);
         verify(dispatchService).dispatch(1L);
         verify(dispatchService).dispatch(2L);
         verify(dispatchService).dispatch(3L);
@@ -56,6 +61,10 @@ class NotificationDispatchSchedulerTest {
                 50
         );
         PageRequest limit = PageRequest.of(0, 50);
+        when(notificationRepository.findStaleProcessingTargetIds(
+                java.time.LocalDateTime.of(2026, 4, 24, 9, 50),
+                limit
+        )).thenReturn(List.of());
         when(notificationRepository.findPendingDispatchTargetIds(limit)).thenReturn(List.of(1L, 2L));
         when(notificationRepository.findRetryWaitingDispatchTargetIds(
                 java.time.LocalDateTime.of(2026, 4, 24, 10, 0),

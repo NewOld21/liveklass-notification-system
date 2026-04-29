@@ -23,6 +23,7 @@ import com.example.notification.dispatchhistory.entity.NotificationDispatchHisto
 import com.example.notification.dispatchhistory.repository.NotificationDispatchHistoryRepository;
 import com.example.notification.notification.entity.Notification;
 import com.example.notification.notification.entity.NotificationChannel;
+import com.example.notification.notification.entity.NotificationStatus;
 import com.example.notification.notification.entity.NotificationType;
 import com.example.notification.notification.repository.NotificationRepository;
 import com.example.notification.notification.sender.NotificationSendResult;
@@ -166,6 +167,26 @@ class NotificationDispatchServiceTest {
 
         assertThat(dispatched).isTrue();
         verify(stateService).markDispatchFailed(1L, "SENDER_NOT_FOUND", "Notification sender not found.");
+    }
+
+    @Test
+    @DisplayName("오래된 PROCESSING 알림은 실패 이력을 저장하고 재시도 대기 상태로 복구한다")
+    void recoverStaleProcessingStoresFailureHistoryAndRetryWaitingStatus() {
+        Notification notification = createNotification(1L);
+        notification.startProcessing(java.time.LocalDateTime.of(2026, 4, 24, 9, 30));
+        when(notificationRepository.findById(1L)).thenReturn(Optional.of(notification));
+
+        boolean recovered = dispatchService.recoverStaleProcessing(1L);
+
+        assertThat(recovered).isTrue();
+        ArgumentCaptor<NotificationDispatchHistory> captor = ArgumentCaptor.forClass(NotificationDispatchHistory.class);
+        verify(dispatchHistoryRepository).save(captor.capture());
+        assertThat(captor.getValue().getAttempt()).isEqualTo(1);
+        assertThat(captor.getValue().getStatus()).isEqualTo(DispatchStatus.FAILED);
+        assertThat(captor.getValue().getErrorCode()).isEqualTo("STALE_PROCESSING_TIMEOUT");
+        assertThat(notification.getStatus()).isEqualTo(NotificationStatus.RETRY_WAITING);
+        assertThat(notification.getRetryCount()).isEqualTo(1);
+        assertThat(notification.getNextRetryAt()).isEqualTo("2026-04-24T10:05:00");
     }
 
     private Notification createNotification(Long id) {

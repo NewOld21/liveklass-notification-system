@@ -1,6 +1,7 @@
 package com.example.notification.notification.scheduler;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Component;
 
 import com.example.notification.notification.repository.NotificationRepository;
 import com.example.notification.notification.service.NotificationDispatchService;
+import com.example.notification.notification.service.NotificationProcessingPolicy;
 
 @Component
 @ConditionalOnProperty(
@@ -45,8 +47,21 @@ public class NotificationDispatchScheduler {
     @Scheduled(fixedDelayString = "${notification.dispatch.scheduler.fixed-delay-ms:5000}")
     public void dispatchPendingAndRetryWaitingNotifications() {
         PageRequest limit = PageRequest.of(0, batchSize);
+        recoverStaleProcessingTargets(limit);
         dispatchTargets(notificationRepository.findPendingDispatchTargetIds(limit));
         dispatchTargets(notificationRepository.findRetryWaitingDispatchTargetIds(LocalDateTime.now(clock), limit));
+    }
+
+    private void recoverStaleProcessingTargets(PageRequest limit) {
+        Duration threshold = NotificationProcessingPolicy.STALE_PROCESSING_THRESHOLD;
+        LocalDateTime staleBefore = LocalDateTime.now(clock).minus(threshold);
+        for (Long notificationId : notificationRepository.findStaleProcessingTargetIds(staleBefore, limit)) {
+            try {
+                dispatchService.recoverStaleProcessing(notificationId);
+            } catch (RuntimeException ex) {
+                log.error("Stale notification recovery failed unexpectedly. notificationId={}", notificationId, ex);
+            }
+        }
     }
 
     private void dispatchTargets(List<Long> notificationIds) {

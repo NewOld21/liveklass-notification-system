@@ -78,4 +78,25 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
             @Param("now") java.time.LocalDateTime now,
             Pageable pageable
     );
+
+    @Query("""
+            select n.id
+            from Notification n
+            where n.status = com.example.notification.notification.entity.NotificationStatus.PROCESSING
+              and n.updatedAt <= :staleBefore
+            order by n.updatedAt asc
+            """)
+    List<Long> findStaleProcessingTargetIds(
+            @Param("staleBefore") java.time.LocalDateTime staleBefore,
+            Pageable pageable
+    );
+
+    @Query("""
+            select n
+            from Notification n
+            where n.status = com.example.notification.notification.entity.NotificationStatus.FAILED
+              and n.retryCount >= n.maxRetryCount
+            order by n.processedAt desc, n.createdAt desc
+            """)
+    List<Notification> findExhaustedFailedNotifications(Pageable pageable);
 }

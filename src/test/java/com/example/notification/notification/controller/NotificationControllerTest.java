@@ -46,7 +46,7 @@ class NotificationControllerTest {
 
         ResponseEntity<NotificationCreateResponse> response = controller.create("Bearer valid-token", request);
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
         assertThat(response.getBody()).isEqualTo(serviceResponse);
         verify(jwtAuthorizationExtractor).extract("Bearer valid-token");
         verify(notificationService).create(request);

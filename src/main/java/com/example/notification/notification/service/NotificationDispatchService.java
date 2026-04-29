@@ -25,6 +25,7 @@ public class NotificationDispatchService {
     private static final String TEMPLATE_NOT_FOUND = "TEMPLATE_NOT_FOUND";
     private static final String SENDER_NOT_FOUND = "SENDER_NOT_FOUND";
     private static final String SENDER_EXCEPTION = "SENDER_EXCEPTION";
+    private static final String STALE_PROCESSING_TIMEOUT = "STALE_PROCESSING_TIMEOUT";
 
     private final NotificationRepository notificationRepository;
     private final NotificationTemplateRepository notificationTemplateRepository;
@@ -65,6 +66,23 @@ public class NotificationDispatchService {
         }
 
         stateService.markDispatchFailed(notificationId, result.errorCode(), result.errorMessage());
+        return true;
+    }
+
+    @Transactional
+    public boolean recoverStaleProcessing(Long notificationId) {
+        Notification notification = findNotification(notificationId);
+        if (notification.getStatus() != com.example.notification.notification.entity.NotificationStatus.PROCESSING) {
+            return false;
+        }
+
+        int attempt = notification.getRetryCount() + 1;
+        NotificationSendResult result = NotificationSendResult.failure(
+                STALE_PROCESSING_TIMEOUT,
+                "Processing state exceeded stale threshold."
+        );
+        saveHistory(notification, attempt, result);
+        notification.markDispatchFailed(result.errorCode(), result.errorMessage(), LocalDateTime.now(clock));
         return true;
     }
 
