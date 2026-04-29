@@ -13,8 +13,6 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.example.notification.common.exception.BusinessException;
-import com.example.notification.common.exception.ErrorCode;
 import com.example.notification.common.jwt.JwtAuthorizationExtractor;
 import com.example.notification.common.jwt.JwtClaims;
 import com.example.notification.notification.dto.NotificationCreateRequest;
@@ -24,7 +22,6 @@ import com.example.notification.notification.service.NotificationService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.enums.ParameterIn;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -55,7 +52,7 @@ public class NotificationController {
     @PostMapping
     @Operation(
             summary = "Create notification request",
-            description = "Validates the JWT bearer token, validates the notification request, and stores a PENDING notification.",
+            description = "Validates the JWT bearer token, validates the notification request, and stores a PENDING notification for the recipient user.",
             security = @SecurityRequirement(name = "bearerAuth")
     )
     @ApiResponses({
@@ -76,26 +73,18 @@ public class NotificationController {
             ),
             @ApiResponse(responseCode = "400", description = "Invalid request body or payload.eventId is missing"),
             @ApiResponse(responseCode = "401", description = "Missing, malformed, invalid, or expired JWT"),
-            @ApiResponse(responseCode = "403", description = "Authenticated user does not match recipientId"),
             @ApiResponse(responseCode = "404", description = "Recipient user or active notification template not found")
     })
     public ResponseEntity<NotificationCreateResponse> create(
-            @Parameter(
-                    name = "Authorization",
-                    description = "JWT bearer token. Example: Bearer eyJhbGciOiJIUzI1NiJ9...",
-                    in = ParameterIn.HEADER,
-                    required = true
-            )
+            @Parameter(hidden = true)
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @Valid @RequestBody NotificationCreateRequest request
     ) {
         JwtClaims claims = jwtAuthorizationExtractor.extract(authorizationHeader);
-        if (!claims.userId().equals(request.recipientId())) {
-            throw new BusinessException(ErrorCode.ACCESS_DENIED, "Authenticated user cannot create notification for recipient.");
-        }
 
         log.info(
-                "Received notification create request. recipientId={}, type={}, channel={}",
+                "Received notification create request. requesterId={}, recipientId={}, type={}, channel={}",
+                claims.userId(),
                 request.recipientId(),
                 request.type(),
                 request.channel()
@@ -138,12 +127,7 @@ public class NotificationController {
             @ApiResponse(responseCode = "404", description = "Notification not found")
     })
     public ResponseEntity<NotificationStatusResponse> getStatus(
-            @Parameter(
-                    name = "Authorization",
-                    description = "JWT bearer token. Example: Bearer eyJhbGciOiJIUzI1NiJ9...",
-                    in = ParameterIn.HEADER,
-                    required = true
-            )
+            @Parameter(hidden = true)
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @PathVariable Long notificationId
     ) {
@@ -165,12 +149,7 @@ public class NotificationController {
             @ApiResponse(responseCode = "404", description = "Notification not found")
     })
     public ResponseEntity<Void> markAsRead(
-            @Parameter(
-                    name = "Authorization",
-                    description = "JWT bearer token. Example: Bearer eyJhbGciOiJIUzI1NiJ9...",
-                    in = ParameterIn.HEADER,
-                    required = true
-            )
+            @Parameter(hidden = true)
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @PathVariable Long notificationId
     ) {

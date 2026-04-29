@@ -4,7 +4,6 @@ import java.util.List;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -18,7 +17,6 @@ import com.example.notification.notification.service.NotificationService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.enums.ParameterIn;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -28,7 +26,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 @RestController
-@RequestMapping("/api/users/{recipientId}/notifications")
+@RequestMapping("/api/users/me/notifications")
 @Tag(name = "User Notifications", description = "User notification list APIs")
 public class UserNotificationController {
 
@@ -46,7 +44,7 @@ public class UserNotificationController {
     @GetMapping
     @Operation(
             summary = "Get user notifications",
-            description = "Validates the JWT bearer token and returns the authenticated recipient's notifications with ALL, READ, or UNREAD filter.",
+            description = "Validates the JWT bearer token and returns the authenticated user's notifications with ALL, READ, or UNREAD filter.",
             security = @SecurityRequirement(name = "bearerAuth")
     )
     @ApiResponses({
@@ -73,22 +71,16 @@ public class UserNotificationController {
             ),
             @ApiResponse(responseCode = "400", description = "Invalid filter value"),
             @ApiResponse(responseCode = "401", description = "Missing, malformed, invalid, or expired JWT"),
-            @ApiResponse(responseCode = "403", description = "Authenticated user cannot access the recipient's notifications")
+            @ApiResponse(responseCode = "403", description = "Authenticated user cannot access the notifications")
     })
     public ResponseEntity<List<NotificationListItemResponse>> getUserNotifications(
-            @Parameter(
-                    name = "Authorization",
-                    description = "JWT bearer token. Example: Bearer eyJhbGciOiJIUzI1NiJ9...",
-                    in = ParameterIn.HEADER,
-                    required = true
-            )
+            @Parameter(hidden = true)
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
-            @PathVariable Long recipientId,
             @Parameter(description = "Read filter: ALL, READ, or UNREAD")
             @RequestParam(defaultValue = "ALL") NotificationReadFilter filter
     ) {
         JwtClaims claims = jwtAuthorizationExtractor.extract(authorizationHeader);
 
-        return ResponseEntity.ok(notificationService.getUserNotifications(recipientId, claims.userId(), filter));
+        return ResponseEntity.ok(notificationService.getUserNotifications(claims.userId(), claims.userId(), filter));
     }
 }
