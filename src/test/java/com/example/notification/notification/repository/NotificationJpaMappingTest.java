@@ -8,6 +8,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.test.context.ActiveProfiles;
 
 import com.example.notification.dispatchhistory.entity.DispatchStatus;
@@ -15,6 +16,7 @@ import com.example.notification.dispatchhistory.entity.NotificationDispatchHisto
 import com.example.notification.dispatchhistory.repository.NotificationDispatchHistoryRepository;
 import com.example.notification.notification.entity.Notification;
 import com.example.notification.notification.entity.NotificationChannel;
+import com.example.notification.notification.entity.NotificationStatus;
 import com.example.notification.notification.entity.NotificationType;
 import com.example.notification.template.entity.NotificationTemplate;
 import com.example.notification.template.repository.NotificationTemplateRepository;
@@ -128,5 +130,63 @@ class NotificationJpaMappingTest {
                 .containsExactly(readNotification.getId());
         assertThat(unread).extracting(Notification::getId)
                 .containsExactly(unreadNotification.getId());
+    }
+
+    @Test
+    void findDispatchTargetsForScheduler() {
+        User user = userRepository.save(User.create("scheduler-user@test.com", "tester", "password-hash"));
+        Notification pending = notificationRepository.save(Notification.createPending(
+                user,
+                NotificationType.PAYMENT_CONFIRMED,
+                NotificationChannel.EMAIL,
+                "scheduler-user:PAYMENT_CONFIRMED:EMAIL:pending-event",
+                "{\"eventId\":\"pending-event\"}",
+                3,
+                LocalDateTime.of(2026, 4, 27, 10, 0)
+        ));
+        Notification retryDue = notificationRepository.save(Notification.createPending(
+                user,
+                NotificationType.PAYMENT_CONFIRMED,
+                NotificationChannel.EMAIL,
+                "scheduler-user:PAYMENT_CONFIRMED:EMAIL:retry-due-event",
+                "{\"eventId\":\"retry-due-event\"}",
+                3,
+                LocalDateTime.of(2026, 4, 27, 10, 1)
+        ));
+        retryDue.startProcessing(LocalDateTime.of(2026, 4, 27, 10, 1));
+        retryDue.markDispatchFailed(
+                "EMAIL_TEMPORARY_FAILURE",
+                "mock smtp timeout",
+                LocalDateTime.of(2026, 4, 27, 10, 1)
+        );
+        notificationRepository.save(retryDue);
+        Notification retryNotDue = notificationRepository.save(Notification.createPending(
+                user,
+                NotificationType.PAYMENT_CONFIRMED,
+                NotificationChannel.EMAIL,
+                "scheduler-user:PAYMENT_CONFIRMED:EMAIL:retry-not-due-event",
+                "{\"eventId\":\"retry-not-due-event\"}",
+                3,
+                LocalDateTime.of(2026, 4, 27, 10, 2)
+        ));
+        retryNotDue.startProcessing(LocalDateTime.of(2026, 4, 27, 10, 2));
+        retryNotDue.markDispatchFailed(
+                "EMAIL_TEMPORARY_FAILURE",
+                "mock smtp timeout",
+                LocalDateTime.of(2026, 4, 27, 10, 2)
+        );
+        notificationRepository.saveAndFlush(retryNotDue);
+
+        List<Long> pendingIds = notificationRepository.findPendingDispatchTargetIds(PageRequest.of(0, 10));
+        List<Long> retryWaitingIds = notificationRepository.findRetryWaitingDispatchTargetIds(
+                LocalDateTime.of(2026, 4, 27, 10, 6),
+                PageRequest.of(0, 10)
+        );
+
+        assertThat(pendingIds).contains(pending.getId());
+        assertThat(retryWaitingIds).contains(retryDue.getId());
+        assertThat(retryWaitingIds).doesNotContain(retryNotDue.getId());
+        assertThat(retryDue.getStatus()).isEqualTo(NotificationStatus.RETRY_WAITING);
+        assertThat(retryNotDue.getStatus()).isEqualTo(NotificationStatus.RETRY_WAITING);
     }
 }

@@ -60,8 +60,8 @@ public class NotificationController {
     )
     @ApiResponses({
             @ApiResponse(
-                    responseCode = "201",
-                    description = "Notification created",
+                    responseCode = "202",
+                    description = "Notification accepted",
                     content = @Content(
                             mediaType = "application/json",
                             schema = @Schema(implementation = NotificationCreateResponse.class),
@@ -101,7 +101,7 @@ public class NotificationController {
                 request.channel()
         );
 
-        return ResponseEntity.status(HttpStatus.CREATED)
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
                 .body(notificationService.create(request));
     }
 

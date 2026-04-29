@@ -89,6 +89,12 @@ gradlew.bat bootRun
 - 실제 이메일 발송은 Mock 또는 로그 출력으로 대체한다.
 - 실제 메시지 브로커는 사용하지 않지만, 운영 환경에서 외부 브로커로 전환 가능한 구조를 목표로 한다.
 
+## 개선 의견
+
+- 운영 환경에서는 현재 스케줄러 기반 polling 구조를 Kafka, RabbitMQ, SQS 같은 메시지 브로커 기반 구조로 전환하면 처리량 조절과 장애 격리가 더 쉬워진다.
+- 운영자 API는 현재 과제 범위에 맞춰 엔드포인트만 분리했지만, 실제 서비스에서는 관리자 역할 기반 접근 제어와 감사 로그를 함께 적용해야 한다.
+- 실패 코드가 충분히 표준화되면 provider timeout, temporary unavailable 같은 안전한 일시 장애만 자동 재오픈 대상으로 분류할 수 있다.
+
 ## 설계 결정과 이유
 
 ### 1. 비동기 처리 구조
@@ -117,11 +123,47 @@ gradlew.bat bootRun
 - 재시도 가능 실패 시 `RETRY_WAITING`
 - 재시도 한도 초과 시 `FAILED`
 
-### 3. 중복 발송 방지
+### 3. 중복 발송 방지 및 동시성 처리 전략
 
-- 비즈니스 기준 중복 방지는 DB의 `dedup_key` unique 제약으로 처리한다.
-- 짧은 시간 내 동일 요청 재전송은 Redis에 저장한 멱등 판단 상태로 차단한다.
-- 다중 인스턴스 환경에서는 `PENDING/RETRY_WAITING -> PROCESSING` 상태 전이에 성공한 워커만 실제 발송을 수행한다.
+중복 문제는 생성 중복, 요청 중복, 처리 중복, 읽음 처리 동시성으로 나누어 처리한다.
+
+#### 동일 이벤트에 대한 중복 생성 방지
+
+같은 사용자, 타입, 채널, 비즈니스 이벤트에 대한 요청은 동일 알림으로 간주한다. 서버는 아래 기준으로 `dedupKey`를 생성한다.
+
+```text
+recipientId:type:channel:eventId
+```
+
+`dedupKey`는 `notification` 테이블에 저장하고 unique 제약을 둔다. 애플리케이션 레벨 검증과 별개로 DB unique 제약이 최종 중복 생성 방지의 마지막 방어선 역할을 한다.
+
+#### 동시에 같은 요청이 여러 번 들어오는 경우
+
+네트워크 재시도, 중복 클릭, 클라이언트 재전송처럼 짧은 시간 안에 같은 요청이 반복될 수 있다. 이를 위해 서버는 멱등 판단 키를 Redis에 TTL과 함께 저장한다.
+
+- 동일 요청이 처음 들어오면 Redis에 멱등 판단 키를 저장하고 정상 처리한다.
+- 같은 요청이 다시 들어오면 Redis를 조회해 이미 처리 중이거나 처리 완료된 요청으로 판단하고, 새로 생성하지 않는다.
+
+Redis는 요청 수준의 빠른 중복 차단을 담당하고, DB unique(`dedupKey`)는 비즈니스 수준의 최종 중복 생성 방지를 담당한다.
+
+#### 다중 인스턴스 환경에서의 중복 처리 방지
+
+다중 인스턴스 환경에서는 여러 워커가 같은 알림을 동시에 조회할 수 있다. 이 문제는 단순 조회만으로 막을 수 없기 때문에, 발송 전 상태 선점 규칙을 둔다.
+
+1. 처리 가능한 알림을 조회한다.
+2. 해당 알림을 `PENDING` 또는 `RETRY_WAITING` 상태에서 `PROCESSING` 상태로 원자적으로 전이한다.
+3. 이 상태 전이에 성공한 워커만 실제 발송을 수행한다.
+
+즉, 조회한 워커가 아니라 상태 전이에 성공한 워커만 발송 권한을 가진다.
+
+#### 읽음 처리 동시성
+
+읽음 상태는 기기별 상태가 아니라 알림 자체의 상태로 관리한다. `notification.read_at` 필드를 기준으로 읽음 여부를 판단한다.
+
+- `read_at == null`: 안 읽음
+- `read_at != null`: 읽음
+
+읽음 처리 요청은 멱등하게 동작한다. 이미 읽은 알림에 대해 다시 읽음 요청이 들어와도 최초 읽음 시각만 보존하고 성공으로 처리한다.
 
 ### 4. 재시도 정책
 
@@ -136,13 +178,47 @@ gradlew.bat bootRun
 
 실패 시 `lastErrorCode`, `lastErrorMessage`, `retryCount`, `nextRetryAt`을 함께 기록한다.
 
-### 5. 운영 시나리오 대응
+### 5. 최종 실패 보관 및 수동 재시도 정책
+
+자동 재시도 이후에도 발송에 실패한 알림은 `FAILED` 상태로 전이한다. 최종 실패 건은 폐기하지 않고 운영자가 조회할 수 있도록 보관한다.
+
+운영자는 최종 실패 조회 API를 통해 알림 기본 정보, 상태, 재시도 횟수, 마지막 실패 코드와 메시지, 수신자, 타입, 채널, 최종 처리 시각을 확인할 수 있다. 발송 시도 이력은 `notification_dispatch_history` 테이블에 별도로 저장한다.
+
+#### 자동 재시도와 수동 재시도의 역할 분리
+
+자동 재시도는 일시적인 장애를 복구하기 위한 기본 장치다. 5분, 10분, 20분 간격으로 재시도한 뒤에도 실패하면 `FAILED`가 된다.
+
+`FAILED` 상태에 도달한 알림은 자동 재처리하지 않는다. 잘못된 데이터나 정책상 재발송이 부적절한 상황일 수 있기 때문에, 최종 실패 이후의 재처리는 운영자 판단 기반의 수동 재시도를 기본 정책으로 둔다.
+
+#### 수동 재시도 가능한 경우
+
+외부 이메일 제공자 장애 해소, 네트워크 타임아웃, 템플릿 수정처럼 재발송 가능 상태가 된 경우 운영자는 `FAILED` 알림을 다시 재처리 대기열에 올릴 수 있다.
+
+현재 구현은 `FAILED -> RETRY_WAITING`, `retryCount = 0`, `nextRetryAt = now`로 상태를 변경한다. 수동 재시도는 즉시 발송이 아니라 스케줄러가 다시 처리할 수 있는 상태로 되돌리는 행위다.
+
+#### 수동 재시도 시 중복 처리 방지
+
+수동 재시도 역시 상태 전이 규칙 안에서 통제한다. 현재 구현은 `FAILED` 상태의 알림만 수동 재시도 대상으로 허용하며, 이미 `RETRY_WAITING`, `PROCESSING`, `SENT` 상태인 알림에는 수동 재시도를 허용하지 않는다.
+
+운영자 재시도 요청 이력의 별도 저장과 여러 건 일괄 재시도는 확장 포인트로 남겨두었다.
+
+#### 운영 보조 자동화 방향
+
+최종 실패 전체를 자동 재처리하는 것은 위험할 수 있으므로 기본 정책은 수동 재시도다. 다만 운영 편의를 위해 다음 기능은 확장할 수 있다.
+
+- 실패 코드 기준으로 재시도 가능성이 높은 건 필터링
+- 특정 시간대에 특정 오류 코드로 실패한 건 일괄 조회
+- 운영자가 선택한 실패 건을 일괄 `RETRY_WAITING`으로 전환
+
+특정 실패 코드에 대한 자동 재오픈도 확장할 수 있다. 예를 들어 provider timeout, temporary unavailable, transient network error처럼 외부 장애 해소 후 재처리가 안전한 코드만 `FAILED -> RETRY_WAITING`으로 자동 전환할 수 있다.
+
+### 6. 운영 시나리오 대응
 
 - 서버 재시작 후 `PENDING`, `RETRY_WAITING` 상태를 다시 조회해 재처리한다.
-- `PROCESSING` 상태가 일정 시간 이상 유지되면 stale 데이터로 판단해 복구 대상으로 본다.
+- `PROCESSING` 상태가 10분 이상 유지되면 stale 데이터로 판단한다. 스케줄러가 이를 실패 시도로 이력에 저장하고, 재시도 한도가 남아 있으면 `RETRY_WAITING`으로 복구한다.
 - 발송 시도 결과는 별도 이력 테이블에 저장해 운영 추적성을 확보한다.
 
-### 6. 템플릿 관리
+### 7. 템플릿 관리
 
 선택 구현 항목으로 `notification_template` 테이블을 두고, 생성 단계에서 타입/채널별 템플릿 존재 여부를 검증하도록 설계했다.
 
@@ -177,6 +253,8 @@ gradlew.bat bootRun
 }
 ```
 
+성공 응답 코드는 `202 Accepted`다. API는 실제 발송 완료가 아니라 발송 요청 접수를 의미한다.
+
 ### 2. 알림 상태 조회
 
 `GET /api/notifications/{notificationId}`
@@ -204,6 +282,55 @@ gradlew.bat bootRun
 ### 4. 읽음 처리
 
 `PATCH /api/notifications/{notificationId}/read`
+
+### 5. 운영자 최종 실패 알림 조회
+
+`GET /api/admin/notifications/failed?size=50`
+
+재시도 한도를 모두 사용해 `FAILED`가 된 알림만 조회한다. 운영자는 이 응답의 `lastErrorCode`, `lastErrorMessage`, `processedAt`을 보고 수동 재처리 여부를 판단한다.
+
+응답 예시:
+
+```json
+[
+  {
+    "notificationId": 1,
+    "recipientId": 101,
+    "type": "PAYMENT_CONFIRMED",
+    "channel": "EMAIL",
+    "status": "FAILED",
+    "retryCount": 4,
+    "maxRetryCount": 3,
+    "lastErrorCode": "EMAIL_TEMPORARY_FAILURE",
+    "lastErrorMessage": "mock smtp timeout",
+    "processedAt": "2026-04-24T10:35:00"
+  }
+]
+```
+
+### 6. 운영자 수동 재시도 전환
+
+`PATCH /api/admin/notifications/{notificationId}/manual-retry`
+
+최종 실패 알림을 `RETRY_WAITING`으로 되돌리고 `retryCount`를 `0`으로 초기화한다. `nextRetryAt`은 현재 시각으로 설정되므로 다음 스케줄러 실행 때 다시 발송 대상이 된다.
+
+응답 예시:
+
+```json
+{
+  "notificationId": 1,
+  "recipientId": 101,
+  "type": "PAYMENT_CONFIRMED",
+  "channel": "EMAIL",
+  "status": "RETRY_WAITING",
+  "retryCount": 0,
+  "nextRetryAt": "2026-04-24T10:40:00",
+  "lastErrorCode": "EMAIL_TEMPORARY_FAILURE",
+  "lastErrorMessage": "mock smtp timeout"
+}
+```
+
+이미 `RETRY_WAITING`, `PROCESSING`, `SENT` 상태인 알림에는 수동 재시도를 허용하지 않는다. 수동 재시도는 최종 실패한 `FAILED` 알림을 다시 스케줄러 처리 대상으로 올리는 운영자 조치다.
 
 ## 데이터 모델 설명
 
@@ -312,10 +439,11 @@ ERD:
 발송 흐름:
 
 1. 스케줄러가 `PENDING`, `RETRY_WAITING` 대상을 조회한다.
-2. 워커가 상태 선점에 성공한 경우에만 `PROCESSING`으로 전이한다.
-3. 템플릿 렌더링 후 채널별 sender로 발송한다.
-4. 성공 시 `SENT`, 실패 시 `RETRY_WAITING` 또는 `FAILED`로 전이한다.
-5. 각 시도 결과는 `notification_dispatch_history`에 저장한다.
+2. 10분 이상 `PROCESSING`에 머문 stale 대상을 실패 이력으로 저장하고 재시도 상태로 복구한다.
+3. 워커가 상태 선점에 성공한 경우에만 `PROCESSING`으로 전이한다.
+4. 템플릿 조회 후 채널별 sender로 발송한다.
+5. 성공 시 `SENT`, 실패 시 `RETRY_WAITING` 또는 `FAILED`로 전이한다.
+6. 각 시도 결과는 `notification_dispatch_history`에 저장한다.
 
 시퀀스 다이어그램:
 
@@ -343,8 +471,9 @@ gradlew.bat test
 
 - 실제 이메일 서버 연동은 구현하지 않고 Mock 또는 로그 출력으로 대체한다.
 - 실제 메시지 브로커는 사용하지 않는다.
-- 수동 재시도, 예약 발송, 고도화된 읽음 충돌 정책은 확장 포인트로 남겨두었다.
-- 현재 저장소는 기본 스캐폴드 상태이며, 일부 도메인 구현은 진행 중이다.
+- 운영자 API는 별도 엔드포인트로 분리했지만, 사용자 역할 기반 권한 모델은 구현하지 않았다.
+- 예약 발송, 고도화된 읽음 충돌 정책은 확장 포인트로 남겨두었다.
+- 특정 실패 코드에 대한 자동 재오픈은 확장 포인트로 남겨두었다. 예를 들어 provider timeout, temporary unavailable, transient network error처럼 외부 장애 해소 후 재처리가 안전한 코드만 `FAILED -> RETRY_WAITING`으로 자동 전환할 수 있다. 영구 실패나 요청 데이터 오류는 자동 재오픈 대상에서 제외해야 한다.
 
 ## AI 활용 범위
 

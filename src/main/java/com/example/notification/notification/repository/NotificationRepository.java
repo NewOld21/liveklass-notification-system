@@ -3,6 +3,7 @@ package com.example.notification.notification.repository;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -57,4 +58,45 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
             @Param("notificationId") Long notificationId,
             @Param("now") java.time.LocalDateTime now
     );
+
+    @Query("""
+            select n.id
+            from Notification n
+            where n.status = com.example.notification.notification.entity.NotificationStatus.PENDING
+            order by n.createdAt asc
+            """)
+    List<Long> findPendingDispatchTargetIds(Pageable pageable);
+
+    @Query("""
+            select n.id
+            from Notification n
+            where n.status = com.example.notification.notification.entity.NotificationStatus.RETRY_WAITING
+              and n.nextRetryAt <= :now
+            order by n.nextRetryAt asc, n.createdAt asc
+            """)
+    List<Long> findRetryWaitingDispatchTargetIds(
+            @Param("now") java.time.LocalDateTime now,
+            Pageable pageable
+    );
+
+    @Query("""
+            select n.id
+            from Notification n
+            where n.status = com.example.notification.notification.entity.NotificationStatus.PROCESSING
+              and n.updatedAt <= :staleBefore
+            order by n.updatedAt asc
+            """)
+    List<Long> findStaleProcessingTargetIds(
+            @Param("staleBefore") java.time.LocalDateTime staleBefore,
+            Pageable pageable
+    );
+
+    @Query("""
+            select n
+            from Notification n
+            where n.status = com.example.notification.notification.entity.NotificationStatus.FAILED
+              and n.retryCount >= n.maxRetryCount
+            order by n.processedAt desc, n.createdAt desc
+            """)
+    List<Notification> findExhaustedFailedNotifications(Pageable pageable);
 }

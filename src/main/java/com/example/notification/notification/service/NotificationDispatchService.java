@@ -25,6 +25,7 @@ public class NotificationDispatchService {
     private static final String TEMPLATE_NOT_FOUND = "TEMPLATE_NOT_FOUND";
     private static final String SENDER_NOT_FOUND = "SENDER_NOT_FOUND";
     private static final String SENDER_EXCEPTION = "SENDER_EXCEPTION";
+    private static final String STALE_PROCESSING_TIMEOUT = "STALE_PROCESSING_TIMEOUT";
 
     private final NotificationRepository notificationRepository;
     private final NotificationTemplateRepository notificationTemplateRepository;
@@ -68,6 +69,23 @@ public class NotificationDispatchService {
         return true;
     }
 
+    @Transactional
+    public boolean recoverStaleProcessing(Long notificationId) {
+        Notification notification = findNotification(notificationId);
+        if (notification.getStatus() != com.example.notification.notification.entity.NotificationStatus.PROCESSING) {
+            return false;
+        }
+
+        int attempt = notification.getRetryCount() + 1;
+        NotificationSendResult result = NotificationSendResult.failure(
+                STALE_PROCESSING_TIMEOUT,
+                "Processing state exceeded stale threshold."
+        );
+        saveHistory(notification, attempt, result);
+        notification.markDispatchFailed(result.errorCode(), result.errorMessage(), LocalDateTime.now(clock));
+        return true;
+    }
+
     private NotificationSendResult send(Notification notification) {
         NotificationTemplate template = notificationTemplateRepository.findByTypeAndChannel(
                         notification.getType(),
@@ -94,7 +112,6 @@ public class NotificationDispatchService {
         }
     }
 
-    @Transactional
     protected void saveHistory(Notification notification, int attempt, NotificationSendResult result) {
         DispatchStatus status = result.successful() ? DispatchStatus.SUCCESS : DispatchStatus.FAILED;
         NotificationDispatchHistory history = NotificationDispatchHistory.create(

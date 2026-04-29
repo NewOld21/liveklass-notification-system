@@ -183,6 +183,17 @@ public class Notification extends BaseTimeEntity {
         this.nextRetryAt = null;
     }
 
+    public void reopenForManualRetry(LocalDateTime nextRetryAt) {
+        if (status != NotificationStatus.FAILED) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST, "Only failed notification can be reopened.");
+        }
+
+        this.status = NotificationStatus.RETRY_WAITING;
+        this.retryCount = 0;
+        this.nextRetryAt = nextRetryAt;
+        this.processedAt = null;
+    }
+
     private void validateProcessingState() {
         if (status != NotificationStatus.PROCESSING) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST, "Notification is not processing.");
