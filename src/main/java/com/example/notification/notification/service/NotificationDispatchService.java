@@ -94,7 +94,6 @@ public class NotificationDispatchService {
         }
     }
 
-    @Transactional
     protected void saveHistory(Notification notification, int attempt, NotificationSendResult result) {
         DispatchStatus status = result.successful() ? DispatchStatus.SUCCESS : DispatchStatus.FAILED;
         NotificationDispatchHistory history = NotificationDispatchHistory.create(
